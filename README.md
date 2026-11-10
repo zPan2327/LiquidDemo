@@ -127,24 +127,24 @@ class GlassBarView(context: Context) : AbstractComposeView(context) {
 
 **Q：玻璃边缘更透明、右半边像没采样？**
 `Backdrop.drawBackdrop()` 的 `size` 是「(胶囊 + 2×padding) / downscaleFactor」的**采样层**尺寸，
-不是胶囊尺寸。当成胶囊尺寸去截取，就只截到中间一条。→ [FAQ #1](docs/FAQ.md#1-玻璃边缘更透明折射发虚右半边像没采样)
+不是胶囊尺寸。当成胶囊尺寸去截取，就只截到中间一条。→ [FAQ #1](docs/FAQ.md)
 
 **Q：折射出来的是胶囊上方那一行内容？**
 miuix 在调用 `drawBackdrop` 前做了 `translate(padding / downscaleFactor)`，**绘制坐标原点是胶囊左上角**，
-采样层向负方向延伸。按「层左上角」算平移就会整体偏一个 padding（40dp）。→ [FAQ #2](docs/FAQ.md#2-折射的参照物整体偏上一个-padding)
+采样层向负方向延伸。按「层左上角」算平移就会整体偏一个 padding（40dp）。→ [FAQ #2](docs/FAQ.md)
 
 **Q：页面滚动时玻璃不刷新 / 先拖一下底栏再滚动，选中项定格？**
 两件事：① 普通 `View` 滚动不会让 Compose 的绘制节点失效，要传 `redrawSignal`；② 指示器采样用的
 `tabsBackdrop` 只有「录制源节点重画」时才会重新 `recordLayer()`，所以信号要同时接给
-**容器、隐藏图标行、指示器**三处。→ [FAQ #4](docs/FAQ.md#4-外部内容滚动时底栏和选中项不实时刷新)
+**容器、隐藏图标行、指示器**三处。→ [FAQ #4](docs/FAQ.md)
 
 **Q：按下时圆角冒黑楔形？**
 折射 + 色散越出采样层，自定义 `Backdrop` 没有整窗兜底，越界即透明（黑）。
-`effects { padding = maxOf(padding, 40.dp.toPx()) }`。→ [FAQ #3](docs/FAQ.md#3-按下时胶囊圆角出现黑色或彩色楔形)
+`effects { padding = maxOf(padding, 40.dp.toPx()) }`。→ [FAQ #3](docs/FAQ.md)
 
 **Q：折射倍率能不能调小？**
 不建议。参数与上游一致（24dp/24dp、`blur 4dp`、`surfaceContainer @ 0.4`、色散 0.5）；觉得「太强/发虚」
-通常是采样几何错了，先按 FAQ #1、#2 修。→ [FAQ #10](docs/FAQ.md#10-这些参数能不能调)
+通常是采样几何错了，先按 FAQ #1、#2 修。→ [FAQ #10](docs/FAQ.md)
 
 ---
 
