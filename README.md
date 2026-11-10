@@ -76,10 +76,84 @@ LiquidGlassScaffold(
 | --- | --- |
 | `LiquidTab(label, icon)` | 一个导航项。不依赖 miuix 的 `NavigationItem`，调用方只需要 Compose |
 | `LiquidGlassScaffold(scrimColor, bottomBar, content)` | 建立 backdrop，录制 `content`，把底栏固定在底部 |
-| `LiquidGlassNavigationBar(tabs, selectedIndex, onTabClick, backdrop)` | 底栏本体。`backdrop` 默认取 `LocalLiquidGlassBackdrop`，也可显式传入以采样别的图层 |
+| `LiquidGlassNavigationBar(tabs, selectedIndex, onTabClick, backdrop, position, bottomPadding, redrawSignal)` | 底栏本体。`backdrop` 默认取 `LocalLiquidGlassBackdrop`，也可显式传入以采样别的图层 |
 | `LocalLiquidGlassBackdrop` | 当前 backdrop。手写布局时可直接读取 |
 
 `:liquid` 里的 7 个实现文件全部是 `internal`，公开面只有 `LiquidGlass.kt` 一个文件。
+
+### 4. 参数
+
+| 参数 | 作用 |
+| --- | --- |
+| `backdrop: Backdrop?` | 采样源。可以是 `LayerBackdrop`（Compose 子树），也可以是自定义 `Backdrop`（比如采样一个普通 `View`） |
+| `position: Float?` | 指示器的连续位置（`0..tabs-1`），给 `HorizontalPager` 跟手用。`null` 时由 `selectedIndex` 和自身拖拽驱动 |
+| `bottomPadding: Dp?` | 覆盖组件自己算的底部留白。宿主已经让开系统栏时用它，避免叠两遍 |
+| `redrawSignal: Int` | **外部内容变化时的重画信号**。背后是普通 `View`（`ScrollView`/`RecyclerView`）时必须传，否则玻璃和选中项都会定格 |
+
+### 5. 嵌进普通 View（`AbstractComposeView`）
+
+页面是传统 `View` 体系时，用 `LayerBackdrop` 采不到东西，需要自己实现一个 `Backdrop` 把 `View`
+画进 Bitmap。要点只有三条（完整实现见 [HyperHand 的 `ViewBackdrop.kt`](https://github.com/zPan2327/HyperHand)）：
+
+```kotlin
+class GlassBarView(context: Context) : AbstractComposeView(context) {
+    // 1) 采样源：宿主页面
+    var source: View? = null
+    // 2) 每帧 +1，传给组件
+    private val redrawTick = mutableIntStateOf(0)
+
+    fun onContentScrolled() { redrawTick.intValue++ }   // 记得合并到一帧一次
+
+    @Composable override fun Content() {
+        IosLiquidGlassNavigationBar(
+            items = items, selectedIndex = index, onItemClick = {},
+            backdrop = viewBackdrop,                  // 自定义 Backdrop
+            redrawSignal = redrawTick.intValue,       // 3) 让它成为绘制 lambda 的捕获值
+            bottomPadding = 7.dp,
+            modifier = Modifier.padding(top = 14.dp), // 按下放大 + 投影的余量
+        )
+    }
+}
+```
+
+坑位清单（每条都有实测数据和源码依据）见 [docs/FAQ.md](docs/FAQ.md)：
+`size` 不是 capsule 尺寸、绘制原点不是层左上角、录制层不会自己重录、圆角黑楔、顶边被裁、性能。
+
+---
+
+## 常见问题
+
+完整版：[**docs/FAQ.md**](docs/FAQ.md)（11 条，含 miuix 源码位置与改法）
+
+**Q：玻璃边缘更透明、右半边像没采样？**
+`Backdrop.drawBackdrop()` 的 `size` 是「(胶囊 + 2×padding) / downscaleFactor」的**采样层**尺寸，
+不是胶囊尺寸。当成胶囊尺寸去截取，就只截到中间一条。→ [FAQ #1](docs/FAQ.md#1-玻璃边缘更透明折射发虚右半边像没采样)
+
+**Q：折射出来的是胶囊上方那一行内容？**
+miuix 在调用 `drawBackdrop` 前做了 `translate(padding / downscaleFactor)`，**绘制坐标原点是胶囊左上角**，
+采样层向负方向延伸。按「层左上角」算平移就会整体偏一个 padding（40dp）。→ [FAQ #2](docs/FAQ.md#2-折射的参照物整体偏上一个-padding)
+
+**Q：页面滚动时玻璃不刷新 / 先拖一下底栏再滚动，选中项定格？**
+两件事：① 普通 `View` 滚动不会让 Compose 的绘制节点失效，要传 `redrawSignal`；② 指示器采样用的
+`tabsBackdrop` 只有「录制源节点重画」时才会重新 `recordLayer()`，所以信号要同时接给
+**容器、隐藏图标行、指示器**三处。→ [FAQ #4](docs/FAQ.md#4-外部内容滚动时底栏和选中项不实时刷新)
+
+**Q：按下时圆角冒黑楔形？**
+折射 + 色散越出采样层，自定义 `Backdrop` 没有整窗兜底，越界即透明（黑）。
+`effects { padding = maxOf(padding, 40.dp.toPx()) }`。→ [FAQ #3](docs/FAQ.md#3-按下时胶囊圆角出现黑色或彩色楔形)
+
+**Q：折射倍率能不能调小？**
+不建议。参数与上游一致（24dp/24dp、`blur 4dp`、`surfaceContainer @ 0.4`、色散 0.5）；觉得「太强/发虚」
+通常是采样几何错了，先按 FAQ #1、#2 修。→ [FAQ #10](docs/FAQ.md#10-这些参数能不能调)
+
+---
+
+## 已知限制
+
+- 液态玻璃的折射需要 **AGSL / `RuntimeShader`（Android 13+）**；更低版本自动降级成模糊 + 蒙层，不会崩。
+- 组件按 `76dp × N + 8dp` 的最大宽度排版，平板/横屏时胶囊居中而不是拉满（与 miuix 浮动栏一致）。
+- 拖拽手势区就是胶囊本身；宿主要是给这块区域加了别的 `pointerInput`，请放在组件外层并注意消费顺序。
+- 重力高光依赖加速度计，模拟器/无传感器设备上方向固定为 `(0, -1)`。
 
 ---
 

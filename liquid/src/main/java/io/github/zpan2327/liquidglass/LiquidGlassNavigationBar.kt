@@ -34,13 +34,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,6 +80,7 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.blur
 import top.yukonga.miuix.kmp.blur.drawBackdrop
@@ -204,8 +206,29 @@ internal fun IosLiquidGlassNavigationBar(
     items: List<NavigationItem>,
     selectedIndex: Int,
     onItemClick: (Int) -> Unit,
-    backdrop: LayerBackdrop?,
+    backdrop: Backdrop?,
     modifier: Modifier = Modifier,
+    /**
+     * 跟手的指示器位置（0..tabsCount-1 的连续值），供宿主在页面横滑时驱动。
+     * 为 null 时行为与原来完全一致（只由 [selectedIndex] 与自身拖拽驱动）。
+     */
+    position: Float? = null,
+    /**
+     * 覆盖底栏自身预留的底部内边距。为 null 时按系统导航栏 inset 自行计算。
+     *
+     * 嵌入到普通 View 里时（HyperHand 的底栏是 FrameLayout 的一个子 View，宿主已经用
+     * margin 让开了系统栏），组件再叠加一遍 nav bar inset 会把胶囊顶高一截，所以由宿主
+     * 明确给出。默认 null，LiquidDemo 的行为不变。
+     */
+    bottomPadding: Dp? = null,
+    /**
+     * 由宿主提供的「强制重画」信号。
+     *
+     * 宿主在页面滚动时只是 invalidate() 外层 View 的话，Compose 那张 AndroidComposeView
+     * 依旧是干净的，玻璃会僵在上一帧。这里用普通 Int 而不是 State：值变化会让
+     * drawBackdrop 的 lambda 参数变化，绘制节点被重建，才会真正重新采样背板。
+     */
+    redrawSignal: Int = 0,
 ) {
     // The app theme follows themeMode, not just the system setting — resolve dark from the
     // active color scheme so the glass tints match the page behind the bar.
@@ -296,6 +319,16 @@ internal fun IosLiquidGlassNavigationBar(
         )
     }
 
+    // 宿主横滑页面时，指示器直接跟到手指的位置（原 GlassBar 的 setPagePosition 语义）；
+    // 宿主把跟手位置收回（position 变回 null）时，落到 selectedIndex 上，避免停在两格之间。
+    LaunchedEffect(position, selectedIndex) {
+        if (position != null) {
+            dampedDrag.snapToValue(position)
+        } else if (kotlin.math.abs(dampedDrag.value - selectedIndex) > 0.01f) {
+            dampedDrag.animateToValue(selectedIndex.toFloat())
+        }
+    }
+
     LaunchedEffect(selectedIndex) {
         if (currentIndex != selectedIndex) {
             currentIndex = selectedIndex
@@ -337,7 +370,8 @@ internal fun IosLiquidGlassNavigationBar(
 
     val navBarBottomPadding = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
         .asPaddingValues().calculateBottomPadding()
-    val bottomPaddingValue = if (navBarBottomPadding != 0.dp) 8.dp + navBarBottomPadding else 36.dp
+    val bottomPaddingValue = bottomPadding
+        ?: if (navBarBottomPadding != 0.dp) 8.dp + navBarBottomPadding else 36.dp
 
     val tabsContent: @Composable RowScope.() -> Unit = {
         val tabScale = LocalIosTabScale.current
@@ -439,6 +473,9 @@ internal fun IosLiquidGlassNavigationBar(
                                     },
                                     highlight = { baseHighlight.value.copy(alpha = 0.75f) },
                                     layerBlock = {
+                                        // 引用一下宿主的滚动信号，让它成为 lambda 的捕获值。
+                                        @Suppress("UNUSED_EXPRESSION")
+                                        redrawSignal
                                         val width = size.width.coerceAtLeast(1f)
                                         val s = lerp(1f, 1f + 16.dp.toPx() / width, dampedDrag.pressProgress)
                                         scaleX = s
@@ -481,6 +518,18 @@ internal fun IosLiquidGlassNavigationBar(
                                 backdrop = backdrop,
                                 shape = { pillShape },
                                 effects = {
+                                    // 这一层是「隐藏的图标层」，它被 layerBackdrop 录进 tabsBackdrop，
+                                    // 指示器再把 tabsBackdrop 叠在页面背板上当参照物。录层只在节点重画时
+                                    // 才刷新（LayerBackdropNode.draw -> recordLayer），而节点平时不会因为
+                                    // 页面滚动而失效，所以拖动过一次底栏之后，选中项的背景就定格在那一刻。
+                                    // 捕获宿主的滚动信号，让这一层跟着滚动一起重建。
+                                    @Suppress("UNUSED_EXPRESSION")
+                                    redrawSignal
+                                    // 按压时 lens 会放大到折射 14dp + 色散，圆角处取样的越界量比
+                                    // 自动算出来的 24dp 更大；Compose 的 LayerBackdrop 有整窗内容
+                                    // 兜底，这里的背板只有本层，越界就会采样到透明（角落出现黑楔形）。
+                                    // 所以和容器一样，把采样余量抬到 40dp。
+                                    padding = maxOf(padding, 40.dp.toPx())
                                     vibrancy()
                                     blur(4.dp.toPx(), 4.dp.toPx())
                                     lens(
@@ -514,6 +563,13 @@ internal fun IosLiquidGlassNavigationBar(
                                 backdrop = combinedBackdrop,
                                 shape = { pillShape },
                                 effects = {
+                                    // 指示器也要跟着宿主的滚动信号重建绘制节点，否则页面滚动时
+                                    // 只有底栏本体在重新采样，选中项那块玻璃会僵在上一帧。
+                                    @Suppress("UNUSED_EXPRESSION")
+                                    redrawSignal
+                                    // 同上：按压折射 + 色散在圆角处会取样到圆角外，背板只有本层，
+                                    // 必须留足余量，否则角落出现黑楔形。
+                                    padding = maxOf(padding, 40.dp.toPx())
                                     val progress = dampedDrag.pressProgress
                                     lens(
                                         refractionHeight = 10.dp.toPx() * progress,

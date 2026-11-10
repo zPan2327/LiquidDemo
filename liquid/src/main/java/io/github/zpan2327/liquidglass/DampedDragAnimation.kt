@@ -132,6 +132,14 @@ internal class DampedDragAnimation(
         }
     }
 
+    /**
+     * 直接把位置钉到 [value]，不播动画，用于宿主的连续跟手（例如横滑页面时的页面位置）。
+     */
+    fun snapToValue(value: Float) {
+        val targetValue = value.coerceIn(valueRange)
+        animationScope.launch { valueAnimation.snapTo(targetValue) }
+    }
+
     fun animateToValue(value: Float) {
         animationScope.launch {
             mutatorMutex.mutate {

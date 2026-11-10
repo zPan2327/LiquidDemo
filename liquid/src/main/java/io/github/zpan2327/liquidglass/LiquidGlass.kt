@@ -15,8 +15,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -102,15 +104,26 @@ fun LiquidGlassScaffold(
  * iOS 26 style liquid-glass tab bar: a floating pill with a draggable indicator, press-time
  * refraction and a specular rim highlight that follows device tilt.
  *
- * Requires a [LayerBackdrop] to actually look like glass. Use [LiquidGlassScaffold] and this
- * reads it from [LocalLiquidGlassBackdrop]; pass [backdrop] explicitly to sample some other
- * layer. With a `null` backdrop the bar degrades to a plain tinted pill.
+ * Requires a [Backdrop] to actually look like glass. Use [LiquidGlassScaffold] and this reads it
+ * from [LocalLiquidGlassBackdrop]; pass [backdrop] explicitly to sample some other source — a
+ * [LayerBackdrop] of a Compose subtree, or a custom [Backdrop] that samples a plain Android
+ * `View` (see `ViewBackdrop` in the companion HyperHand project). With a `null` backdrop the bar
+ * degrades to a plain tinted pill.
  *
  * Colours come from the ambient miuix theme. Wrapping the call site in `MiuixTheme` matches the
  * app's palette; without it miuix's default light scheme is used.
  *
  * @param selectedIndex index of the highlighted tab; out-of-range values are coerced.
  * @param onTabClick invoked when a different tab is tapped or dragged onto.
+ * @param position continuous indicator position (`0..tabs.size-1`) for hosts that drive the bar
+ *   from a horizontal pager. `null` (default) lets the bar follow [selectedIndex] and its own drag.
+ * @param bottomPadding overrides the bar's own bottom inset. Pass it when the host already keeps
+ *   clear of the system bars; leaving it `null` folds the navigation-bar inset in automatically.
+ * @param redrawSignal a counter the host bumps whenever the sampled content changed without this
+ *   composable recomposing (for example a scrolling `RecyclerView`). The value is only read as a
+ *   lambda capture, so bumping it re-creates the draw node and re-samples the backdrop. Without it
+ *   the glass freezes on the last frame it drew — and so does the selected indicator, whose
+ *   recorded layer only refreshes when its node redraws.
  */
 @Composable
 fun LiquidGlassNavigationBar(
@@ -118,7 +131,10 @@ fun LiquidGlassNavigationBar(
     selectedIndex: Int,
     onTabClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    backdrop: LayerBackdrop? = LocalLiquidGlassBackdrop.current,
+    backdrop: Backdrop? = LocalLiquidGlassBackdrop.current,
+    position: Float? = null,
+    bottomPadding: Dp? = null,
+    redrawSignal: Int = 0,
 ) {
     val items = remember(tabs) { tabs.map { NavigationItem(label = it.label, icon = it.icon) } }
     IosLiquidGlassNavigationBar(
@@ -127,5 +143,8 @@ fun LiquidGlassNavigationBar(
         onItemClick = onTabClick,
         backdrop = backdrop,
         modifier = modifier,
+        position = position,
+        bottomPadding = bottomPadding,
+        redrawSignal = redrawSignal,
     )
 }
