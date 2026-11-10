@@ -1,0 +1,33 @@
+# Files for the build / IDE
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Keystores
+*.jks
+*.keystore
+
+# Local scratch
+*.mp4
+/shot*.png
+/frames/
+/ff_*/
+rel*.png
+v2*.png
+A_idle.png
+B_pressed.png
+C_idle.png
+D_pressed.png
+final*.png
+fix_*.png
+diff_map.png
+rim_compare.png
+demo_states.png
+before_after.png

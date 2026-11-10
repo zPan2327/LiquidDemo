@@ -1,0 +1,24 @@
+Liquid Glass Navigation Bar for Jetpack Compose
+Copyright 2026, compose-miuix-ui contributors
+Copyright 2026, the LiquidDemo contributors
+
+This product includes software developed as part of
+  miuix                       https://github.com/compose-miuix-ui/miuix
+  AndroidLiquidGlass          https://github.com/Kyant0/AndroidLiquidGlass
+
+Both upstream projects are licensed under the Apache License, Version 2.0.
+The liquid-glass tab bar in this repository is a re-implementation of their
+Apple-style tabs: the rendering pipeline (backdrop capture, the AGSL
+rounded-rect refraction shader, the specular rim highlight, the damped drag
+state machine) is adapted from miuix's blur module, whose glass visuals in
+turn follow Kyant0's AndroidLiquidGlass.
+
+Files adapted from those sources keep their original copyright headers:
+
+  liquid/src/main/java/io/github/zpan2327/liquidglass/CombinedBackdrop.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/DampedDragAnimation.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/InnerShadow.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/InteractiveHighlight.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/Lens.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/LiquidGlassNavigationBar.kt
+  liquid/src/main/java/io/github/zpan2327/liquidglass/Vibrancy.kt
